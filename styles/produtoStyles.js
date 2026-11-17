@@ -11,14 +11,16 @@ export const styles = StyleSheet.create({
   // "Foto" do livro — como não temos capas reais, replica o fallback do
   // site (selo + título + autor) que já existia no produto.html.
   imagemContainer: {
+    width: "100%",
+    aspectRatio: 0.72,
     backgroundColor: "#f8fafc",
     borderWidth: 1,
     borderColor: CORES.borderLight,
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 48,
-    paddingHorizontal: 24,
+    overflow: "hidden",
+    padding: 0,
     marginBottom: 20,
   },
   imagemSelo: {

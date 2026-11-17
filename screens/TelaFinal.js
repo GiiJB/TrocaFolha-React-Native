@@ -7,7 +7,9 @@ import CategoriasModal from "../components/modals/CategoriasModal";
 import { CORES, FONTES } from "../constants/themes";
 import { CATEGORIAS, LINKS_RAPIDOS } from "../constants/Navbar";
 
-export default function TelaSucesso({ navigation }) {
+export default function TelaSucesso({ navigation, route }) {
+  const idPedido = route?.params?.idPedido;
+
   const [busca, setBusca] = useState("");
   const [modalCategoriasVisivel, setModalCategoriasVisivel] = useState(false);
 
@@ -33,15 +35,20 @@ export default function TelaSucesso({ navigation }) {
       <View style={styles.conteudoCentral}>
         <View style={styles.cardSucesso}>
           <Text style={styles.emoji}>🎉</Text>
-          <Text style={styles.titulo}>Pedido Recebido!</Text>
-          <Text style={styles.subtitulo}>(Ambiente de Simulação de Compra)</Text>
-
-          <Text style={styles.descricao}>
-            Obrigado por utilizar o Sebo Digital! Esta é apenas uma demonstração do fluxo completo de ponta a ponta da nossa aplicação.
+          <Text style={styles.titulo}>
+            Pagamento aprovado!
           </Text>
 
-          <TouchableOpacity 
-            style={styles.botaoHome} 
+          <Text style={styles.subtitulo}>
+            Pedido #{idPedido}
+          </Text>
+
+          <Text style={styles.descricao}>
+            Seu pagamento foi confirmado com sucesso. Obrigado por comprar no Troca Folha!
+          </Text>
+
+          <TouchableOpacity
+            style={styles.botaoHome}
             onPress={() => navigation.navigate("Home")}
           >
             <Text style={styles.botaoHomeTexto}>Voltar para a Home</Text>

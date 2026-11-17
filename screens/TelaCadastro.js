@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import Header from "../components/global/Header";
 import CategoriasModal from "../components/modals/CategoriasModal";
@@ -10,6 +10,7 @@ import Botao from "../components/ui/Button";
 import { CORES } from "../constants/themes";
 import { styles } from "../styles/authStyles";
 import { CATEGORIAS, LINKS_RAPIDOS } from "../constants/Navbar";
+import API_URL from "../api";
 
 const ESTADOS = [
   { sigla: "AC", nome: "Acre" },
@@ -29,6 +30,8 @@ export default function TelaCadastro({ navigation }) {
   const [estado, setEstado] = useState("");
   const [cidade, setCidade] = useState("");
   const [aceitouTermos, setAceitouTermos] = useState(false);
+  const [mensagemSucesso, setMensagemSucesso] = useState("");
+  const [mensagemErro, setMensagemErro] = useState("");
 
   const [senhaCurta, setSenhaCurta] = useState(false);
   const [senhasDiferentes, setSenhasDiferentes] = useState(false);
@@ -42,20 +45,74 @@ export default function TelaCadastro({ navigation }) {
   function selecionarLinkRapido(label) {
   }
 
-  function handleCadastrar() {
-    if (senha.length < 6) {
-      setSenhaCurta(true);
-      setSenhasDiferentes(false);
-      return;
-    }
-    if (senha !== confirma) {
-      setSenhasDiferentes(true);
-      setSenhaCurta(false);
-      return;
-    }
+  async function handleCadastrar() {
     setSenhaCurta(false);
     setSenhasDiferentes(false);
+    setMensagemSucesso("");
+    setMensagemErro("");
+
+    if (
+      !nome.trim() ||
+      !email.trim() ||
+      !senha ||
+      !confirma ||
+      !telefone.trim() ||
+      !dataNascimento.trim() ||
+      !estado ||
+      !cidade.trim()
+    ) {
+      Alert.alert("Atenção", "Preencha todos os campos obrigatórios.");
+      return;
+    }
+
+    if (!aceitouTermos) {
+      Alert.alert("Atenção", "Você precisa aceitar os termos de uso e privacidade.");
+      return;
+    }
+
+    if (senha.length < 6) {
+      setSenhaCurta(true);
+      return;
+    }
+
+    if (senha !== confirma) {
+      setSenhasDiferentes(true);
+      return;
+    }
+
+    try {
+      const resposta = await fetch(`${API_URL}/api/auth/cadastro`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          nome: nome.trim(),
+          email: email.trim().toLowerCase(),
+          senha,
+          telefone: telefone.trim(),
+          dataNascimento: dataNascimento.trim(),
+          estado,
+          cidade: cidade.trim(),
+        }),
+      });
+
+      const dados = await resposta.json();
+
+      if (!resposta.ok) {
+        throw new Error(dados.erro || "Não foi possível realizar o cadastro.");
+      }
+
+      setMensagemSucesso("Cadastro realizado com sucesso! Sua conta foi criada.");
+
+    } catch (erro) {
+      console.error("Erro no cadastro:", erro);
+      setMensagemErro(
+        erro.message || "Não foi possível conectar ao servidor."
+      );
+    }
   }
+
 
   return (
     <View style={styles.tela}>
@@ -80,6 +137,27 @@ export default function TelaCadastro({ navigation }) {
 
           <Text style={styles.titulo}>Crie sua conta</Text>
           <Text style={styles.subtitulo}>Junte-se à nossa comunidade de leitores.</Text>
+          {mensagemSucesso !== "" && (
+            <View style={{ backgroundColor: "#dcfce7", padding: 12, borderRadius: 8, marginBottom: 12 }}>
+              <Text style={{ color: "#166534" }}>{mensagemSucesso}</Text>
+
+              <TouchableOpacity
+                onPress={() => navigation.replace("Login")}
+                style={{ marginTop: 8 }}
+              >
+                <Text style={{ color: "#166534", fontWeight: "bold" }}>
+                  Ir para o login
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {mensagemErro !== "" && (
+            <View style={{ backgroundColor: "#fee2e2", padding: 12, borderRadius: 8, marginBottom: 12 }}>
+              <Text style={{ color: "#991b1b" }}>{mensagemErro}</Text>
+            </View>
+          )}
+
 
           {senhaCurta && <Alerta tipo="erro">A senha deve ter no mínimo 6 dígitos.</Alerta>}
           {senhasDiferentes && <Alerta tipo="erro">As senhas não coincidem!</Alerta>}

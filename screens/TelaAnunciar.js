@@ -1,16 +1,6 @@
 import React, { useState } from "react";
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView, 
-  Image, 
-  StyleSheet, 
-  Alert 
-} from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Image, StyleSheet, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker"; // Importante para pegar fotos no celular
 
 import Header from "../components/global/Header";
 import Footer from "../components/global/Footer";
@@ -18,31 +8,35 @@ import Footer from "../components/global/Footer";
 import { CORES, FONTES } from "../constants/themes";
 import { LINKS_RAPIDOS } from "../constants/Navbar";
 import { styles as acervoStyles } from "../styles/acervoStyles";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import API_URL from "../api";
+
 
 const CATEGORIAS = [
-  "Literatura Brasileira", "Literatura Estrangeira", "Ficção", "Romance", 
-  "Poesia", "Terror", "Mistério & Suspense", "Infanto Juvenil", 
+  "Literatura Brasileira", "Literatura Estrangeira", "Ficção", "Romance",
+  "Poesia", "Terror", "Mistério & Suspense", "Infanto Juvenil",
   "Mangás", "Autoajuda", "Idiomas", "Desapega Uni"
 ];
 
 const AREAS_ACADEMICAS = [
-  "Direito", "Medicina", "Enfermagem", "Psicologia", "Engenharia", 
-  "Tecnologia", "Administração", "Economia", "Letras", "Pedagogia", 
+  "Direito", "Medicina", "Enfermagem", "Psicologia", "Engenharia",
+  "Tecnologia", "Administração", "Economia", "Letras", "Pedagogia",
   "História", "Geografia", "Biologia", "Artes"
 ];
 
 const CONSERVACAO = ["Ótimo estado", "Bom estado"];
 
 export default function TelaAnunciar({ navigation, route }) {
+  const [carregando, setCarregando] = useState(false);
   // Se vier um produto via rota, significa que estamos EDITANDO. Se não, estamos CRIANDO.
   const produtoEdicao = route.params?.produto || null;
 
   // ESTADOS DO FORMULÁRIO
   const [isColecao, setIsColecao] = useState(produtoEdicao?.colecao || false);
   const [imagemUri, setImagemUri] = useState(
-    produtoEdicao?.imagemBase64 ? `data:image/jpeg;base64,${produtoEdicao.imagemBase64}` : null
+    produtoEdicao?.imagem_url || produtoEdicao?.imagem || ""
   );
-  
+
   const [titulo, setTitulo] = useState(produtoEdicao?.titulo || "");
   const [autor, setAutor] = useState(produtoEdicao?.autor || "");
   const [editora, setEditora] = useState(produtoEdicao?.editora || "");
@@ -54,19 +48,76 @@ export default function TelaAnunciar({ navigation, route }) {
   const [descricao, setDescricao] = useState(produtoEdicao?.descricao || "");
 
   // FUNÇÃO: Escolher imagem da galeria do celular
-  async function escolherImagem() {
-    // Pede permissão e abre a galeria
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, // Permite recortar a foto
-      aspect: [3, 4], // Proporção ideal pra capa de livro
-      quality: 0.8,
-    });
 
-    if (!result.canceled) {
-      setImagemUri(result.assets[0].uri);
+
+  async function escolherImagem() {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [3, 4],
+        quality: 0.8,
+      });
+
+      if (result.canceled) return;
+
+      const imagemSelecionada = result.assets[0];
+      const dadosImagem = new FormData();
+
+      // No navegador, enviamos o arquivo real.
+      // No Android, enviamos a URI da imagem.
+      if (imagemSelecionada.file) {
+        dadosImagem.append(
+          "file",
+          imagemSelecionada.file,
+          imagemSelecionada.fileName || "capa-livro.jpg"
+        );
+      } else {
+        dadosImagem.append("file", {
+          uri: imagemSelecionada.uri,
+          name: imagemSelecionada.fileName || "capa-livro.jpg",
+          type: imagemSelecionada.mimeType || "image/jpeg",
+        });
+      }
+
+      dadosImagem.append("upload_preset", "troca_folha");
+
+      setEnviandoImagem(true);
+
+      const resposta = await fetch(
+        "https://api.cloudinary.com/v1_1/wrw cztpq/image/upload"
+          .replace(" ", ""),
+        {
+          method: "POST",
+          body: dadosImagem,
+        }
+      );
+
+      const dados = await resposta.json();
+
+      if (!resposta.ok) {
+        throw new Error(
+          dados.error?.message || "Não foi possível enviar a imagem."
+        );
+      }
+
+      // Guardamos a URL da nuvem, não o caminho local.
+      setImagemUri(dados.secure_url);
+
+      Alert.alert("Sucesso!", "Imagem enviada para a nuvem!");
+    } catch (erro) {
+      console.error("Erro ao enviar imagem:", erro);
+
+      Alert.alert(
+        "Erro ao enviar imagem",
+        erro.message || "Verifique sua conexão e tente novamente."
+      );
+    } finally {
+      setEnviandoImagem(false);
     }
   }
+
+
 
   // FUNÇÃO: Mudar categoria (limpa a área se não for Desapega Uni)
   function handleCategoriaChange(cat) {
@@ -77,46 +128,112 @@ export default function TelaAnunciar({ navigation, route }) {
   }
 
   // FUNÇÃO: Validar e Enviar Formulário
-  function handleAnunciar() {
-    // 1. Validação de Imagem
+
+
+  async function handleAnunciar() {
+    if (carregando) return;
+
     if (!imagemUri) {
-      Alert.alert("Atenção", "A foto real do produto é obrigatória.");
+      Alert.alert("Atenção", "Selecione uma foto do produto.");
       return;
     }
 
-    // 2. Validação de campos obrigatórios
-    if (!titulo || !autor || !ano || !preco || !conservacao || !categoria) {
-      Alert.alert("Atenção", "Preencha todos os campos obrigatórios marcados com (*).");
+    if (
+      !titulo.trim() ||
+      !autor.trim() ||
+      !ano ||
+      !preco ||
+      !conservacao ||
+      !categoria
+    ) {
+      Alert.alert("Atenção", "Preencha todos os campos obrigatórios.");
       return;
     }
 
-    // 3. Validação do Desapega Uni
     if (categoria === "Desapega Uni" && !area) {
-      Alert.alert("Atenção", "Selecione uma área acadêmica para produtos do Desapega Uni.");
+      Alert.alert("Atenção", "Selecione uma área acadêmica.");
       return;
     }
 
-    // Monta o objeto pra enviar pro Back-end
-    const anuncioFormatado = {
-      colecao: isColecao,
-      imagem: imagemUri,
-      titulo,
-      autor,
-      editora,
-      anoPublicacao: parseInt(ano),
-      preco: parseFloat(preco.replace(",", ".")),
-      conservacao,
-      categoria,
-      area: categoria === "Desapega Uni" ? area : null,
-      descricao
-    };
+    const anoNumero = Number(ano);
+    const precoNumero = Number(preco.replace(",", "."));
 
-    console.log("DADOS PRONTOS PARA O BACKEND:", anuncioFormatado);
-    Alert.alert("Sucesso!", produtoEdicao ? "Anúncio atualizado!" : "Livro anunciado com sucesso!");
-    
-    // Volta pra tela anterior (ou pra Home)
-    navigation.goBack();
+    if (!Number.isInteger(anoNumero) || anoNumero <= 0) {
+      Alert.alert("Atenção", "Informe um ano válido.");
+      return;
+    }
+
+    if (!Number.isFinite(precoNumero) || precoNumero < 0) {
+      Alert.alert("Atenção", "Informe um preço válido.");
+      return;
+    }
+
+    try {
+      setCarregando(true);
+
+      const token = await AsyncStorage.getItem("token");
+
+      if (!token) {
+        Alert.alert(
+          "Login necessário",
+          "Entre na sua conta antes de anunciar um produto."
+        );
+        return;
+      }
+
+      const anuncioFormatado = {
+        colecao: isColecao,
+        imagem: imagemUri.trim(),
+        titulo: titulo.trim(),
+        autor: autor.trim(),
+        editora: editora.trim(),
+        anoPublicacao: anoNumero,
+        preco: precoNumero,
+        conservacao,
+        categoria,
+        area: categoria === "Desapega Uni" ? area : null,
+        descricao: descricao.trim(),
+      };
+
+      const resposta = await fetch(
+        produtoEdicao
+          ? `${API_URL}/api/produtos/${produtoEdicao.id_produto}`
+          : `${API_URL}/api/produtos`,
+        {
+          method: produtoEdicao ? "PUT" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(anuncioFormatado),
+        }
+      );
+
+      const dados = await resposta.json();
+
+      if (!resposta.ok) {
+        throw new Error(
+          dados.erro || "Não foi possível cadastrar o produto."
+        );
+      }
+
+      navigation.navigate("Acervo", {
+        feedbackAcao: produtoEdicao
+          ? "Anúncio atualizado com sucesso!"
+          : "Anúncio cadastrado com sucesso!",
+      });
+    } catch (erro) {
+      console.error("Erro ao anunciar:", erro);
+      Alert.alert(
+        "Erro ao anunciar",
+        erro.message || "Não foi possível conectar ao servidor."
+      );
+    } finally {
+      setCarregando(false);
+    }
   }
+
+
 
   // Renderizador de Radios customizados (reaproveitando o estilo das bolinhas)
   const renderRadio = (label, selecionado, onPress) => (
@@ -130,13 +247,13 @@ export default function TelaAnunciar({ navigation, route }) {
 
   return (
     <View style={acervoStyles.tela}>
-      <Header navigation={navigation} busca="" setBusca={() => {}} linksRapidos={LINKS_RAPIDOS} />
+      <Header navigation={navigation} busca="" setBusca={() => { }} linksRapidos={LINKS_RAPIDOS} />
 
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <Text style={styles.tituloSecao}>
           {produtoEdicao ? "Edite seu produto." : "Cadastre seu produto."}
         </Text>
-        
+
         <Text style={styles.textoIntro}>
           Preencha os campos abaixo para anunciar seu produto. É importante que todas as informações sejam verídicas.
         </Text>
@@ -145,31 +262,48 @@ export default function TelaAnunciar({ navigation, route }) {
         </Text>
 
         {/* ========== FOTO ========== */}
-        <TouchableOpacity style={styles.fotoContainer} onPress={escolherImagem}>
-          {imagemUri ? (
-            <Image source={{ uri: imagemUri }} style={styles.fotoImagem} />
+
+        <View style={styles.fotoContainer}>
+          {imagemUri.trim() ? (
+            <Image
+              source={{ uri: imagemUri.trim() }}
+              style={styles.fotoImagem}
+              onError={() => console.log("Não foi possível carregar a imagem.")}
+            />
           ) : (
             <View style={styles.fotoPlaceholderTexto}>
-              <Ionicons name="camera-outline" size={40} color="#94a3b8" />
-              <Text style={styles.fotoTexto}>A foto real do produto</Text>
-              <Text style={[styles.fotoTexto, { fontWeight: "bold" }]}>é obrigatória</Text>
+              <Ionicons name="image-outline" size={40} color="#94a3b8" />
+              <Text style={styles.fotoTexto}>Prévia da imagem</Text>
+              <Text style={styles.fotoTexto}>Cole um link abaixo</Text>
             </View>
           )}
-          <View style={styles.btnFotoFooter}>
-            <Text style={styles.btnFotoFooterTexto}>Selecionar Foto</Text>
-          </View>
-        </TouchableOpacity>
+        </View>
+
+        <Text style={styles.fotoAvisoObrigatorio}>
+          * Imagem obrigatória
+        </Text>
+
+        <Text style={styles.label}>Link da imagem *</Text>
+
+        <TextInput
+          style={styles.input}
+          value={imagemUri}
+          onChangeText={setImagemUri}
+          placeholder="https://exemplo.com/imagem.jpg"
+          autoCapitalize="none"
+          keyboardType="url"
+        />
         <Text style={styles.fotoAvisoObrigatorio}>* Upload de imagem obrigatório</Text>
 
         {/* ========== ABAS (TABS) ========== */}
         <View style={styles.tabsContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tabBtn, !isColecao ? styles.tabAtiva : styles.tabInativa]}
             onPress={() => setIsColecao(false)}
           >
             <Text style={[styles.tabTexto, !isColecao && styles.tabTextoAtivo]}>Livro</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tabBtn, isColecao ? styles.tabAtiva : styles.tabInativa]}
             onPress={() => setIsColecao(true)}
           >
@@ -179,7 +313,7 @@ export default function TelaAnunciar({ navigation, route }) {
 
         {/* ========== FORMULÁRIO ========== */}
         <View style={styles.formContainer}>
-          
+
           <Text style={styles.label}>{isColecao ? "Título da Coleção:*" : "Título:*"}</Text>
           <TextInput style={styles.input} value={titulo} onChangeText={setTitulo} placeholder={isColecao ? "Ex: Box Harry Potter" : "Digite o título do livro"} />
 
@@ -226,18 +360,29 @@ export default function TelaAnunciar({ navigation, route }) {
           </View>
 
           <Text style={styles.labelMargin}>Descrição:</Text>
-          <TextInput 
-            style={styles.textArea} 
-            value={descricao} 
-            onChangeText={setDescricao} 
-            placeholder="Detalhes extras sobre a edição, marcas de uso, etc..." 
-            multiline 
-            numberOfLines={4} 
+          <TextInput
+            style={styles.textArea}
+            value={descricao}
+            onChangeText={setDescricao}
+            placeholder="Detalhes extras sobre a edição, marcas de uso, etc..."
+            multiline
+            numberOfLines={4}
             textAlignVertical="top"
           />
 
-          <TouchableOpacity style={styles.btnAnunciar} onPress={handleAnunciar}>
-            <Text style={styles.btnAnunciarTexto}>{produtoEdicao ? "Salvar Alterações" : "Anunciar Produto"}</Text>
+
+          <TouchableOpacity
+            style={styles.btnAnunciar}
+            onPress={handleAnunciar}
+            disabled={carregando}
+          >
+            <Text style={styles.btnAnunciarTexto}>
+              {carregando
+                ? "Enviando..."
+                : produtoEdicao
+                  ? "Salvar Alterações"
+                  : "Anunciar Produto"}
+            </Text>
           </TouchableOpacity>
 
         </View>
@@ -271,7 +416,7 @@ const styles = StyleSheet.create({
     color: CORES.dark,
     marginBottom: 20,
   },
-  
+
   // Foto Placeholder
   fotoContainer: {
     height: 250,

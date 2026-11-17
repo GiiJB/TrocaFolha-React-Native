@@ -81,7 +81,7 @@ export const styles = StyleSheet.create({
   },
   cardImgFoto: {
     width: "100%",
-    height: "100%",
+    flex: 1,
   },
   semFoto: {
     color: "#94a3b8",

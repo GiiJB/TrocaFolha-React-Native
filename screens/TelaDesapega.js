@@ -1,100 +1,208 @@
-import React, { useState, useMemo } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from "react-native";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from "react-native";
+
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect, useRoute } from "@react-navigation/native";
 
 import Header from "../components/global/Header";
 import Footer from "../components/global/Footer";
-import AcervoCard from "../components/cards/AcervoCard"; 
+import AcervoCard from "../components/cards/AcervoCard";
 import FiltroDesapegaModal from "../components/modals/FiltroDesapegaModal";
 
 import { useCart } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
+
 import { CORES } from "../constants/themes";
 import { LINKS_RAPIDOS } from "../constants/Navbar";
-import { styles as acervoStyles } from "../styles/acervoStyles"; 
-
-// ============================================================================
-// DADOS MOCKADOS — Desapega Uni
-// ============================================================================
-const MOCK_DESAPEGA = [
-  {
-    id_produto: 201,
-    titulo: "Vade Mecum 2023",
-    autor: "Editora Saraiva",
-    preco: 85.0,
-    categoria: "Direito", // Usando a área como categoria pro Card renderizar bonito
-    imagemBase64: null,
-    dono: { id_usuario: 4, nome: "João Silva" },
-  },
-  {
-    id_produto: 202,
-    titulo: "Cálculo - Volume 1",
-    autor: "James Stewart",
-    preco: 120.0,
-    categoria: "Engenharia",
-    imagemBase64: null,
-    dono: { id_usuario: 5, nome: "Maria Oliveira" },
-  },
-  {
-    id_produto: 203,
-    titulo: "Anatomia Humana",
-    autor: "Netter",
-    preco: 190.5,
-    categoria: "Medicina",
-    imagemBase64: null,
-    dono: { id_usuario: 1, nome: "Você" },
-  },
-];
+import { styles as acervoStyles } from "../styles/acervoStyles";
+import API_URL from "../api";
 
 export default function TelaDesapega({ navigation }) {
-  const { adicionarItem } = useCart();
-  const { usuarioLogado } = useAuth();
+  const route = useRoute();
 
-  const [livros, setLivros] = useState(MOCK_DESAPEGA);
-  const [buscaBarra, setBuscaBarra] = useState(""); 
-  
-  // Estados do Modal
+  const { adicionarItem } = useCart();
+  const { usuarioLogado, token } = useAuth();
+
+  const [livros, setLivros] = useState([]);
+  const [buscaBarra, setBuscaBarra] = useState("");
+
+  const [carregando, setCarregando] = useState(true);
+  const [mensagemSucesso, setMensagemSucesso] = useState("");
+
+  // Estados dos filtros
   const [areaSelecionada, setAreaSelecionada] = useState("");
   const [precoMin, setPrecoMin] = useState("");
   const [precoMax, setPrecoMax] = useState("");
   const [filtroVisivel, setFiltroVisivel] = useState(false);
 
+  // Exibir mensagem de retorno da edição ou cadastro
+  useEffect(() => {
+    if (route.params?.feedbackAcao) {
+      setMensagemSucesso(route.params.feedbackAcao);
+
+      navigation.setParams({ feedbackAcao: undefined });
+    }
+  }, [route.params?.feedbackAcao]);
+
+  // Buscar anúncios do Desapega Uni
+  useFocusEffect(
+    useCallback(() => {
+      let ativo = true;
+
+      async function carregarLivros() {
+        try {
+          setCarregando(true);
+
+          const resposta = await fetch(
+            `${API_URL}/api/produtos?desapega=true`
+          );
+
+          const dados = await resposta.json();
+
+          if (!resposta.ok) {
+            throw new Error(
+              dados.erro || "Não foi possível carregar os anúncios."
+            );
+          }
+
+          if (ativo) {
+            const lista = (dados.produtos || []).map((livro) => ({
+              ...livro,
+              id: livro.id_produto,
+              preco: Number(livro.preco),
+              imagem: livro.imagem_url || livro.imagem || null,
+            }))
+
+            setLivros(lista);
+          }
+        } catch (erro) {
+          if (ativo) {
+            Alert.alert("Erro", erro.message);
+          }
+        } finally {
+          if (ativo) {
+            setCarregando(false);
+          }
+        }
+      }
+
+      carregarLivros();
+
+      return () => {
+        ativo = false;
+      };
+    }, [])
+  );
+
+  // Busca e filtros
   const livrosFiltrados = useMemo(() => {
     const buscaLower = buscaBarra.trim().toLowerCase();
-    const minNum = precoMin === "" ? null : parseFloat(String(precoMin).replace(",", "."));
-    const maxNum = precoMax === "" ? null : parseFloat(String(precoMax).replace(",", "."));
+
+    const minNum =
+      precoMin === ""
+        ? null
+        : parseFloat(String(precoMin).replace(",", "."));
+
+    const maxNum =
+      precoMax === ""
+        ? null
+        : parseFloat(String(precoMax).replace(",", "."));
 
     return livros.filter((livro) => {
+      const titulo = String(livro.titulo || "").toLowerCase();
+      const autor = String(livro.autor || "").toLowerCase();
+
       const bateBusca =
         buscaLower === "" ||
-        livro.titulo.toLowerCase().includes(buscaLower) ||
-        livro.autor.toLowerCase().includes(buscaLower);
+        titulo.includes(buscaLower) ||
+        autor.includes(buscaLower);
 
-      const bateArea = areaSelecionada === "" || livro.categoria === areaSelecionada;
+      // A área acadêmica vem do campo area do banco
+      const bateArea =
+        areaSelecionada === "" ||
+        livro.area === areaSelecionada;
 
-      const batePrecoMin = minNum == null || isNaN(minNum) || livro.preco >= minNum;
-      const batePrecoMax = maxNum == null || isNaN(maxNum) || livro.preco <= maxNum;
+      const preco = Number(livro.preco);
 
-      return bateBusca && bateArea && batePrecoMin && batePrecoMax;
+      const batePrecoMin =
+        minNum == null || isNaN(minNum) || preco >= minNum;
+
+      const batePrecoMax =
+        maxNum == null || isNaN(maxNum) || preco <= maxNum;
+
+      return (
+        bateBusca &&
+        bateArea &&
+        batePrecoMin &&
+        batePrecoMax
+      );
     });
   }, [livros, buscaBarra, areaSelecionada, precoMin, precoMax]);
 
+  // Abrir detalhes do produto
   function abrirProduto(livro) {
-    navigation.navigate("Produto", { produto: livro });
+    navigation.navigate("Produto", {
+      produto: livro,
+    });
   }
 
+  // Adicionar ao carrinho
   function handleAdicionar(livro) {
     adicionarItem(livro);
   }
 
+  // Editar anúncio
   function handleEditar(livro) {
-    // navigation.navigate("EditarProduto", { produto: livro });
+    navigation.navigate("Anunciar", {
+      produto: livro,
+    });
   }
 
-  function handleApagar(livro) {
-    setLivros((atual) => atual.filter((l) => l.id_produto !== livro.id_produto));
+  // Excluir anúncio pela API
+  async function handleApagar(livro) {
+    if (!token) {
+      Alert.alert(
+        "Atenção",
+        "Você precisa estar logado para excluir um anúncio."
+      );
+      return;
+    }
+
+    try {
+      const resposta = await fetch(
+        `${API_URL}/api/produtos/${livro.id_produto}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const dados = await resposta.json();
+
+      if (!resposta.ok) {
+        throw new Error(
+          dados.erro || "Não foi possível excluir o anúncio."
+        );
+      }
+
+      // Remover da lista somente após confirmação do backend
+      setLivros((atual) =>
+        atual.filter(
+          (item) => item.id_produto !== livro.id_produto
+        )
+      );
+
+      setMensagemSucesso(
+        dados.mensagem || "Anúncio excluído com sucesso."
+      );
+    } catch (erro) {
+      Alert.alert("Erro ao excluir", erro.message);
+    }
   }
 
+  // Aplicar filtros
   function handleAplicarFiltro({ area, min, max }) {
     setAreaSelecionada(area);
     setPrecoMin(min);
@@ -115,22 +223,48 @@ export default function TelaDesapega({ navigation }) {
         data={livrosFiltrados}
         keyExtractor={(item) => String(item.id_produto)}
         contentContainerStyle={acervoStyles.scrollContent}
-        
+
         ListHeaderComponent={
           <>
-            <Text style={acervoStyles.tituloTopo}>Iniciativa Desapega Uni</Text>
-            
-            <Text style={styles.textoDescritivo}>
-              Facilitando o acesso ao conhecimento universitário através da economia colaborativa. Encontre aqui livros e materiais acadêmicos com preços acessíveis.
+            <Text style={acervoStyles.tituloTopo}>
+              Iniciativa Desapega Uni
             </Text>
+
+            <Text style={styles.textoDescritivo}>
+              Facilitando o acesso ao conhecimento universitário
+              através da economia colaborativa. Encontre aqui livros
+              e materiais acadêmicos com preços acessíveis.
+            </Text>
+
+            {mensagemSucesso !== "" && (
+              <View style={styles.mensagemSucesso}>
+                <Text style={styles.textoSucesso}>
+                  ✓ {mensagemSucesso}
+                </Text>
+              </View>
+            )}
 
             <View style={acervoStyles.barraFiltro}>
               <Text style={acervoStyles.contadorTexto}>
-                {livrosFiltrados.length} {livrosFiltrados.length === 1 ? "resultado" : "resultados"}
+                {livrosFiltrados.length}{" "}
+                {livrosFiltrados.length === 1
+                  ? "resultado"
+                  : "resultados"}
               </Text>
-              <TouchableOpacity style={acervoStyles.btnFiltros} onPress={() => setFiltroVisivel(true)}>
-                <Ionicons name="options-outline" size={16} color={CORES.dark} />
-                <Text style={acervoStyles.btnFiltrosTexto}>Filtros</Text>
+
+              <TouchableOpacity
+                style={acervoStyles.btnFiltros}
+                onPress={() => setFiltroVisivel(true)}
+              >
+                <Ionicons
+                  name="options-outline"
+                  size={16}
+                  color={CORES.dark}
+                />
+
+                <Text style={acervoStyles.btnFiltrosTexto}>
+                  Filtros
+                </Text>
               </TouchableOpacity>
             </View>
           </>
@@ -148,9 +282,24 @@ export default function TelaDesapega({ navigation }) {
         )}
 
         ListEmptyComponent={
-          <View style={acervoStyles.listaVazia}>
-            <Text style={acervoStyles.listaVaziaTexto}>Nenhum material encontrado com esses filtros.</Text>
-          </View>
+          carregando ? (
+            <View style={acervoStyles.listaVazia}>
+              <ActivityIndicator
+                size="large"
+                color={CORES.accent}
+              />
+
+              <Text style={acervoStyles.listaVaziaTexto}>
+                Carregando materiais...
+              </Text>
+            </View>
+          ) : (
+            <View style={acervoStyles.listaVazia}>
+              <Text style={acervoStyles.listaVaziaTexto}>
+                Nenhum material encontrado com esses filtros.
+              </Text>
+            </View>
+          )
         }
 
         ListFooterComponent={<Footer />}
@@ -175,5 +324,19 @@ const styles = StyleSheet.create({
     color: CORES.muted || "#64748b",
     fontSize: 15,
     lineHeight: 22,
-  }
+  },
+
+  mensagemSucesso: {
+    backgroundColor: "#dcfce7",
+    padding: 12,
+    marginHorizontal: 16,
+    marginBottom: 15,
+    borderRadius: 8,
+  },
+
+  textoSucesso: {
+    color: "#166534",
+    fontSize: 14,
+    fontWeight: "600",
+  },
 });

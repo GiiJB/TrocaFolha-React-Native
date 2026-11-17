@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useRoute } from "@react-navigation/native";
 import { View, ScrollView, FlatList, Text } from "react-native";
 import HeaderHome from "../components/global/Header";
 import CategoriasModal from "../components/modals/CategoriasModal";
@@ -8,12 +9,7 @@ import CategoriaCard from "../components/cards/CategoriaCard";
 import FooterHome from "../components/global/Footer";
 import { styles } from "../styles/homeStyles";
 import { CATEGORIAS, LINKS_RAPIDOS } from "../constants/Navbar";
-
-// ============================================================================
-// DADOS MOCKADOS — troque por fetch('https://SEU_BACKEND/api/produtos') e
-// fetch('.../api/produtos?categoria=Mangás') quando o back estiver disponível
-// (ex: dentro de um useEffect no lugar dessas constantes).
-// ============================================================================
+import API_URL from "../api";
 
 const PRODUTOS_DESTAQUE = [
   {
@@ -142,8 +138,60 @@ const SLIDES = [
 ];
 
 export default function TelaHome({ navigation }) {
+
+  const route = useRoute();
+
+  const [mensagemSucesso, setMensagemSucesso] = useState("");
+
+  useEffect(() => {
+    const mensagem = route.params?.feedbackLogin;
+
+    if (!mensagem) return;
+
+    setMensagemSucesso(mensagem);
+
+    const temporizador = setTimeout(() => {
+      setMensagemSucesso("");
+      navigation.setParams({ feedbackLogin: undefined });
+    }, 4000);
+
+    return () => clearTimeout(temporizador);
+  }, [route.params?.feedbackLogin, navigation]);
+
   const [busca, setBusca] = useState("");
   const [modalCategoriasVisivel, setModalCategoriasVisivel] = useState(false);
+  const [produtos, setProdutos] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+
+
+  useEffect(() => {
+    async function carregarProdutos() {
+      try {
+        const resposta = await fetch(`${API_URL}/api/produtos`);
+
+        if (!resposta.ok) {
+          throw new Error("Não foi possível carregar os produtos.");
+        }
+
+        const dados = await resposta.json();
+
+        setProdutos(
+          (dados.produtos || []).map((livro) => ({
+            ...livro,
+            id: livro.id_produto,
+            preco: Number(livro.preco),
+          }))
+        );
+      } catch (erro) {
+        console.error("Erro ao carregar produtos da Home:", erro);
+      } finally {
+        setCarregando(false);
+      }
+    }
+
+    carregarProdutos();
+  }, []);
+
 
   function abrirProduto(livro) {
     navigation.navigate("Produto", { produto: livro });
@@ -152,7 +200,7 @@ export default function TelaHome({ navigation }) {
   // CORREÇÃO AQUI: Faz o redirecionamento correto ao clicar em uma categoria na Home
   function selecionarCategoria(categoria) {
     setModalCategoriasVisivel(false);
-    
+
     if (categoria === "Desapega Uni") {
       navigation.navigate("Desapega");
     } else {
@@ -170,30 +218,65 @@ export default function TelaHome({ navigation }) {
       />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Carrossel 
-          slides={SLIDES} 
-          onPressCta={() => navigation.navigate("Acervo")} 
+        {mensagemSucesso !== "" && (
+          <View
+            style={{
+              backgroundColor: "#dcfce7",
+              padding: 12,
+              borderRadius: 8,
+              marginHorizontal: 16,
+              marginTop: 12,
+              marginBottom: 12,
+            }}
+          >
+            <Text style={{ color: "#166534" }}>
+              {mensagemSucesso}
+            </Text>
+          </View>
+        )}
+        <Carrossel
+          slides={SLIDES}
+          onPressCta={() => navigation.navigate("Acervo")}
         />
 
         <View style={styles.secao}>
           <Text style={styles.secaoTitulo}>Destaques do Acervo</Text>
           <FlatList
-            data={PRODUTOS_DESTAQUE}
+            data={produtos.filter(
+              (livro) => livro.categoria !== "Mangás"
+            )}
             horizontal
             showsHorizontalScrollIndicator={false}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => <LivroCard livro={item} onPress={abrirProduto} />}
+            keyExtractor={(item) => String(item.id_produto)}
+            renderItem={({ item }) => (
+              <LivroCard livro={item} onPress={abrirProduto} />
+            )}
+            ListEmptyComponent={
+              !carregando ? (
+                <Text>Nenhum livro em destaque disponível.</Text>
+              ) : null
+            }
           />
         </View>
 
         <View style={styles.secao}>
           <Text style={styles.secaoTitulo}>Mundo Geek: Mangás em Destaque</Text>
           <FlatList
-            data={MANGAS_DESTAQUE}
+            data={produtos.filter(
+              (livro) =>
+                String(livro.categoria || "").trim().toLowerCase() === "mangás"
+            )}
             horizontal
             showsHorizontalScrollIndicator={false}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={({ item }) => <LivroCard livro={item} onPress={abrirProduto} />}
+            keyExtractor={(item) => String(item.id_produto)}
+            renderItem={({ item }) => (
+              <LivroCard livro={item} onPress={abrirProduto} />
+            )}
+            ListEmptyComponent={
+              !carregando ? (
+                <Text>Nenhum mangá cadastrado.</Text>
+              ) : null
+            }
           />
         </View>
 

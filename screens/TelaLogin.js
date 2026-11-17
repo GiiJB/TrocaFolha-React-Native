@@ -8,13 +8,20 @@ import Alerta from "../components/ui/Alert";
 import Botao from "../components/ui/Button";
 import { styles } from "../styles/authStyles";
 import { CATEGORIAS, LINKS_RAPIDOS } from "../constants/Navbar";
+import { useAuth } from "../context/AuthContext";
+import API_URL from "../api";
+
 
 export default function TelaLogin({ navigation }) {
+  const [carregando, setCarregando] = useState(false);
+  const [mensagemErro, setMensagemErro] = useState("");
+  const [mensagemSucesso, setMensagemSucesso] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState(false);
   const [busca, setBusca] = useState("");
   const [modalCategoriasVisivel, setModalCategoriasVisivel] = useState(false);
+  const { login } = useAuth();
 
   function selecionarCategoria(categoria) {
     setModalCategoriasVisivel(false);
@@ -29,16 +36,59 @@ export default function TelaLogin({ navigation }) {
     // "Precisa de ajuda?" -> Ajuda
   }
 
-  function handleEntrar() {
-    if (!email || !senha) {
-      setErro(true);
+
+
+  async function handleEntrar() {
+    setMensagemErro("");
+    setMensagemSucesso("");
+
+    if (!email.trim() || !senha) {
+      setMensagemErro("Informe seu e-mail e sua senha.");
       return;
     }
-    // Aqui entra a chamada real:
-    // fetch('https://BACKEND/api/login', { method: 'POST', body: JSON.stringify({ email, senha }) })
-    setErro(false);
-    // navigation.navigate('Home') quando a tela Home estiver na stack
+
+    try {
+      setCarregando(true);
+
+      const resposta = await fetch(`${API_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          senha,
+        }),
+      });
+
+      const dados = await resposta.json();
+
+      if (!resposta.ok) {
+        throw new Error(
+          dados.erro || "Não foi possível realizar o login."
+        );
+      }
+
+      if (!dados.token) {
+        throw new Error("O servidor não retornou o token de acesso.");
+      }
+
+      await login(dados.usuario, dados.token);
+
+      navigation.replace("Home", {
+        feedbackLogin: "Login realizado com sucesso!",
+      });
+    } catch (erro) {
+      console.error("Erro no login:", erro);
+      setMensagemErro(
+        erro.message || "Não foi possível conectar ao servidor."
+      );
+    } finally {
+      setCarregando(false);
+    }
   }
+
+
 
   return (
     <View style={styles.tela}>
@@ -62,8 +112,31 @@ export default function TelaLogin({ navigation }) {
           </View>
 
           <Text style={styles.titulo}>Bem-vindo de volta!</Text>
+          {mensagemSucesso !== "" && (
+            <View
+              style={{
+                backgroundColor: "#dcfce7",
+                padding: 12,
+                borderRadius: 8,
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ color: "#166534" }}>{mensagemSucesso}</Text>
+            </View>
+          )}
 
-          {erro && <Alerta tipo="erro">E-mail ou senha incorretos! Tente novamente.</Alerta>}
+          {mensagemErro !== "" && (
+            <View
+              style={{
+                backgroundColor: "#fee2e2",
+                padding: 12,
+                borderRadius: 8,
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ color: "#991b1b" }}>{mensagemErro}</Text>
+            </View>
+          )}
 
           <Campo
             label="E-mail"
@@ -81,7 +154,9 @@ export default function TelaLogin({ navigation }) {
             onChangeText={setSenha}
           />
 
-          <Botao onPress={handleEntrar}>Entrar na conta</Botao>
+          <Botao onPress={handleEntrar} disabled={carregando}>
+            {carregando ? "Entrando..." : "Entrar na conta"}
+          </Botao>
         </View>
       </ScrollView>
       <Footer />

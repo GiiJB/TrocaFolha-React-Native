@@ -1,40 +1,77 @@
-import React, { createContext, useState, useContext } from "react";
+
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect
+} from "react";
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const AuthContext = createContext({
   usuarioLogado: null,
+  token: null,
+  carregandoAuth: true,
   setUsuarioLogado: () => {},
-  login: () => {},
-  logout: () => {},
+  login: async () => {},
+  logout: async () => {}
 });
 
-// ============================================================================
-// MOCK — troque por integração real (login via API / token) quando o back
-// estiver disponível. Por enquanto dá pra simular os 3 cenários mudando este
-// objeto (ou chamando setUsuarioLogado em qualquer tela):
-//
-//   1) Visitante deslogado      -> usuarioLogado: null
-//   2) Dono de alguns produtos  -> { id_usuario: 1, nome: "Você", admin: false }
-//   3) Admin do site            -> { id_usuario: 1, nome: "Você", admin: true }
-// ============================================================================
-const USUARIO_MOCK = {
-  id_usuario: 1,
-  nome: "Você",
-  admin: false,
-};
-
 export function AuthProvider({ children }) {
-  const [usuarioLogado, setUsuarioLogado] = useState(USUARIO_MOCK);
+  const [usuarioLogado, setUsuarioLogado] = useState(null);
+  const [token, setToken] = useState(null);
+  const [carregandoAuth, setCarregandoAuth] = useState(true);
 
-  function login(usuario) {
+  // Recupera a sessão salva no dispositivo.
+  useEffect(() => {
+    async function recuperarSessao() {
+      try {
+        const tokenSalvo = await AsyncStorage.getItem("token");
+        const usuarioSalvo = await AsyncStorage.getItem("usuario");
+
+        if (tokenSalvo && usuarioSalvo) {
+          setToken(tokenSalvo);
+          setUsuarioLogado(JSON.parse(usuarioSalvo));
+        }
+      } catch (erro) {
+        console.error("Erro ao recuperar sessão:", erro);
+      } finally {
+        setCarregandoAuth(false);
+      }
+    }
+
+    recuperarSessao();
+  }, []);
+
+  // Salva os dados recebidos pelo login.
+  async function login(usuario, novoToken) {
+    await AsyncStorage.setItem("token", novoToken);
+    await AsyncStorage.setItem("usuario", JSON.stringify(usuario));
+
+    setToken(novoToken);
     setUsuarioLogado(usuario);
   }
 
-  function logout() {
+  // Encerra a sessão.
+  async function logout() {
+    await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem("usuario");
+
+    setToken(null);
     setUsuarioLogado(null);
   }
 
   return (
-    <AuthContext.Provider value={{ usuarioLogado, setUsuarioLogado, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        usuarioLogado,
+        token,
+        carregandoAuth,
+        setUsuarioLogado,
+        login,
+        logout
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -76,11 +76,14 @@ export default function TelaProduto({ navigation, route }) {
   }
 
   // Trata se a imagem vem em base64 ou uri direta
-  const imagemSrc = produto.imagemBase64 
-    ? { uri: `data:image/jpeg;base64,${produto.imagemBase64}` } 
-    : produto.imagem 
-    ? { uri: produto.imagem } 
-    : null;
+  // Trata imagem em Base64 ou por URL
+  const imagemUrl = produto.imagem_url || produto.imagem || null;
+
+  const imagemSrc = produto.imagemBase64
+    ? { uri: `data:image/jpeg;base64,${produto.imagemBase64}` }
+    : imagemUrl
+      ? { uri: imagemUrl }
+      : null;
 
   return (
     <View style={styles.tela}>
@@ -100,7 +103,14 @@ export default function TelaProduto({ navigation, route }) {
         {/* Exibição da Imagem (Mostra a foto real se houver, senão mostra o fallback estético) */}
         <View style={styles.imagemContainer}>
           {imagemSrc ? (
-            <Image source={imagemSrc} style={{ width: "100%", height: "100%", resizeMode: "cover" }} />
+            <Image
+              source={imagemSrc}
+              style={{ width: "100%", height: "100%", resizeMode: "cover" }}
+              onLoad={() => console.log("Imagem carregada com sucesso!")}
+              onError={(erro) =>
+                console.log("ERRO AO CARREGAR IMAGEM:", erro.nativeEvent)
+              }
+            />
           ) : (
             <>
               <Text style={styles.imagemSelo}>Sebo Digital</Text>
